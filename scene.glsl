@@ -8,9 +8,9 @@ struct Scene {
 
 Scene sc_init() {
     Sphere sphere = Sphere(vec3(0., 0., -1.), 0.5);
-    FluidCube cube = fc_create(0.1, vec3(0., 0., -0.5), 64, 0.2, 0., 0.000001);
-    fc_add_density(cube, 0, 0, 0, 0.2);
-    fc_add_velocity(cube, 0, 0, 0, 10., 10., 10.);
+    FluidCube cube = fc_create(0.5, vec3(-0.25, 0., -0.5), 2, 0.2, 0., 0.000001);
+    fc_add_density(cube, 1, 1, 1, iTime);
+    fc_add_velocity(cube, 1, 1, 1, 0., 0., 1.);
     return Scene(
         sphere,
         cube
@@ -23,12 +23,12 @@ bool rayFluidInteract(in FluidCube cube, in Ray r, float t_min, float t_max, ino
     // reflect based on the density of the cube at the hit point coord
     // requires being able to look up the density at a point
     int iters = 1;
-    int max_iter = 1000;
+    int max_iter = 10;
     vec3 loc = r.origin;
     bool hit = false;
     float step_size = 1.;
     while (!hit && iters < max_iter) {
-        float half_length = cube.scale * float(cube.size) / 2.;
+        float half_length = cube.scale * float(cube.size) / 3.;
         vec3 half_bounds = vec3(
             cube.center.x + half_length,
             cube.center.y + half_length,
@@ -41,6 +41,7 @@ bool rayFluidInteract(in FluidCube cube, in Ray r, float t_min, float t_max, ino
             float density = fc_point_density(cube, loc);
             rec.t = length((loc  - r.origin))/length(r.direction);
             rec.p = loc;
+            rec.dm =  min(1., density);
             vec3 outward_normal = normalize((rec.p - cube.center));
             hr_set_face_normal(rec, r, outward_normal);
             return true;
@@ -53,14 +54,14 @@ bool rayFluidInteract(in FluidCube cube, in Ray r, float t_min, float t_max, ino
 vec3 sc_ray_color(in Scene s, in Ray r) {
     HitRecord rec;
     if (sphere_hit(s.sphere, r, 0., 1./0., rec) || rayFluidInteract(s.cube, r, 0., 1./0., rec)) {
-        return 0.5 * (rec.normal + vec3(1., 1., 1.));
+        return 0.5 * (rec.normal + vec3(1., 1., 1.)) * rec.dm;
     }
     vec3 unit_dir = normalize(r.direction);
     float t = 0.5*(unit_dir.y + 1.0);
     return (1.0 - t) * vec3(1., 1., 1.) + t*vec3(0.5, 0.7, 1.0);
 }
 
-vec3 sc_col(in Scene s) {
+vec3 sc_col(inout Scene s) {
     /*
         Initial implementation:
         Create a ray from the origin through the uv coords of the screen
@@ -80,7 +81,7 @@ vec3 sc_col(in Scene s) {
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     float u = uv.x;
     float v = uv.y;
-    Ray ray = Ray(origin, lower_left_corner + u*horizontal + v*vertical - origin);
     fc_step(s.cube);
+    Ray ray = Ray(origin, lower_left_corner + u*horizontal + v*vertical - origin);
     return sc_ray_color(s, ray);
 }

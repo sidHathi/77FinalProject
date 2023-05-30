@@ -40,7 +40,7 @@ FluidCube fc_create(float scale, vec3 center, int size, float diffusion, float v
         viscosity,
         pdensity,
         density,
-        Vx,
+        Vx, 
         Vy,
         Vz,
         Vx0,
@@ -117,7 +117,7 @@ float fc_point_density(in FluidCube cube, in vec3 point) {
             }
         }
     }
-    return 0.;
+    return 1.;
 }
 
 float sdBox(vec3 p, vec3 half_bounds) {

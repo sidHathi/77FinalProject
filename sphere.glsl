@@ -29,6 +29,7 @@ bool sphere_hit(in Sphere s, Ray r, float t_min, float t_max, inout HitRecord re
     rec.p = ray_pointAt(r, rec.t);
     vec3 outward_normal = normalize((rec.p - s.center) / s.radius);
     hr_set_face_normal(rec, r, outward_normal);
+    rec.dm = 1.;
     // rec.mat = s.mat;
 
     return true;

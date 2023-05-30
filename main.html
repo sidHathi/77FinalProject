@@ -222,6 +222,7 @@ struct HitRecord {
     vec3 normal;
     float t;
     bool front_face;
+    // float dm;
     Material mat;
 };
 
@@ -282,6 +283,7 @@ struct HitRecord {
     vec3 normal;
     float t;
     bool front_face;
+    // float dm;
     Material mat;
 };
 
@@ -319,6 +321,7 @@ bool sphere_hit(in Sphere s, Ray r, float t_min, float t_max, inout HitRecord re
     rec.p = ray_pointAt(r, rec.t);
     vec3 outward_normal = normalize((rec.p - s.center) / s.radius);
     hr_set_face_normal(rec, r, outward_normal);
+    // rec.dm = 1.;
     // rec.mat = s.mat;
 
     return true;
@@ -352,38 +355,17 @@ uniform float       iSampleRate;
 
 #define SHADER_TOY
 
-    // This is a constraint of GLSL and means N can be no larger than 512
-const int MAX_ARR_SIZE = 67108864;
+    #define EPSILON 1e-4
+#define PI 3.1415926535897932384626433832795
+
+// This is a constraint of GLSL and means N can be no larger than 64
+const int MAX_ARR_SIZE = 512;
 
 int IX(int x, int y, int z, int N) {
     return x + y*N + z*N*N;
 }
 
-float[MAX_ARR_SIZE] getx(vec3[MAX_ARR_SIZE] v, int size) {
-    float x[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        x[i] = v[i].x;
-    }
-    return x;
-}
-
-float[MAX_ARR_SIZE] gety(vec3[MAX_ARR_SIZE] v, int size) {
-    float y[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        y[i] = v[i].y;
-    }
-    return y;
-}
-
-float[MAX_ARR_SIZE] getz(vec3[MAX_ARR_SIZE] v, int size) {
-    float z[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        z[i] = v[i].z;
-    }
-    return z;
-}
-
-void set_bnd(in int b, inout float[MAX_ARR_SIZE] x, int N) {
+void set_bnd(in int b, inout float x[MAX_ARR_SIZE], int N) {
     for(int j = 1; j < N - 1; j++) {
         for(int i = 1; i < N - 1; i++) {
             x[IX(i, j, 0, N)] = b == 3 ? -x[IX(i, j, 1, N)] : x[IX(i, j, 1, N)];
@@ -403,33 +385,33 @@ void set_bnd(in int b, inout float[MAX_ARR_SIZE] x, int N) {
         }
     }
     
-    x[IX(0, 0, 0, N)]       = 0.33f * (x[IX(1, 0, 0, N)]
+    x[IX(0, 0, 0, N)]       = 0.33 * (x[IX(1, 0, 0, N)]
                                   + x[IX(0, 1, 0, N)]
                                   + x[IX(0, 0, 1, N)]);
-    x[IX(0, N-1, 0, N)]     = 0.33f * (x[IX(1, N-1, 0, N)]
+    x[IX(0, N-1, 0, N)]     = 0.33 * (x[IX(1, N-1, 0, N)]
                                   + x[IX(0, N-2, 0, N)]
                                   + x[IX(0, N-1, 1, N)]);
-    x[IX(0, 0, N-1, N)]     = 0.33f * (x[IX(1, 0, N-1, N)]
+    x[IX(0, 0, N-1, N)]     = 0.33 * (x[IX(1, 0, N-1, N)]
                                   + x[IX(0, 1, N-1, N)]
                                   + x[IX(0, 0, N, N)]);
-    x[IX(0, N-1, N-1, N)]   = 0.33f * (x[IX(1, N-1, N-1, N)]
+    x[IX(0, N-1, N-1, N)]   = 0.33 * (x[IX(1, N-1, N-1, N)]
                                   + x[IX(0, N-2, N-1, N)]
                                   + x[IX(0, N-1, N-2, N)]);
-    x[IX(N-1, 0, 0, N)]     = 0.33f * (x[IX(N-2, 0, 0, N)]
+    x[IX(N-1, 0, 0, N)]     = 0.33 * (x[IX(N-2, 0, 0, N)]
                                   + x[IX(N-1, 1, 0, N)]
                                   + x[IX(N-1, 0, 1, N)]);
-    x[IX(N-1, N-1, 0, N)]   = 0.33f * (x[IX(N-2, N-1, 0, N)]
+    x[IX(N-1, N-1, 0, N)]   = 0.33 * (x[IX(N-2, N-1, 0, N)]
                                   + x[IX(N-1, N-2, 0, N)]
                                   + x[IX(N-1, N-1, 1, N)]);
-    x[IX(N-1, 0, N-1, N)]   = 0.33f * (x[IX(N-2, 0, N-1, N)]
+    x[IX(N-1, 0, N-1, N)]   = 0.33 * (x[IX(N-2, 0, N-1, N)]
                                   + x[IX(N-1, 1, N-1, N)]
                                   + x[IX(N-1, 0, N-2, N)]);
-    x[IX(N-1, N-1, N-1, N)] = 0.33f * (x[IX(N-2, N-1, N-1, N)]
+    x[IX(N-1, N-1, N-1, N)] = 0.33 * (x[IX(N-2, N-1, N-1, N)]
                                   + x[IX(N-1, N-2, N-1, N)]
                                   + x[IX(N-1, N-1, N-2, N)]);
 }
 
-void lin_solve(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0, float a, float c, int iter, int N) {
+void lin_solve(int b, inout float x[MAX_ARR_SIZE], inout float x0[MAX_ARR_SIZE], float a, float c, int iter, int N) {
     float cRecip = 1.0 / c;
     for (int k = 0; k < iter; k++) {
         for (int m = 1; m < N - 1; m++) {
@@ -451,12 +433,12 @@ void lin_solve(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0,
     }
 }
 
-void diffuse(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0, float diff, float dt, int iter, int N) {
+void diffuse(int b, inout float x[MAX_ARR_SIZE], inout float x0[MAX_ARR_SIZE], float diff, float dt, int iter, int N) {
     float a = dt * diff * float(N - 2) * float(N - 2);
     lin_solve(b, x, x0, a, 1. + 6. * a, iter, N);
 }
 
-void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY, inout float[MAX_ARR_SIZE] velocZ, inout float[MAX_ARR_SIZE] p, inout float[MAX_ARR_SIZE] div, int iter, int N) {
+void project(inout float velocX[MAX_ARR_SIZE], inout float velocY[MAX_ARR_SIZE], inout float velocZ[MAX_ARR_SIZE], inout float p[MAX_ARR_SIZE], inout float div[MAX_ARR_SIZE], int iter, int N) {
     for (int k = 1; k < N - 1; k++) {
         for (int j = 1; j < N - 1; j++) {
             for (int i = 1; i < N - 1; i++) {
@@ -479,11 +461,11 @@ void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY,
     for (int k = 1; k < N - 1; k++) {
         for (int j = 1; j < N - 1; j++) {
             for (int i = 1; i < N - 1; i++) {
-                velocX[IX(i, j, k, N)] -= 0.5f * (  p[IX(i+1, j, k, N)]
+                velocX[IX(i, j, k, N)] -= 0.5* (  p[IX(i+1, j, k, N)]
                                                 -p[IX(i-1, j, k, N)]) * float(N);
-                velocY[IX(i, j, k, N)] -= 0.5f * (  p[IX(i, j+1, k, N)]
+                velocY[IX(i, j, k, N)] -= 0.5 * (  p[IX(i, j+1, k, N)]
                                                 -p[IX(i, j-1, k, N)]) * float(N);
-                velocZ[IX(i, j, k, N)] -= 0.5f * (  p[IX(i, j, k+1, N)]
+                velocZ[IX(i, j, k, N)] -= 0.5 * (  p[IX(i, j, k+1, N)]
                                                 -p[IX(i, j, k-1, N)]) * float(N);
             }
         }
@@ -493,7 +475,7 @@ void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY,
     set_bnd(3, velocZ, N);
 }
 
-void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY, inout float[MAX_ARR_SIZE] velocZ, float dt, int N)
+void advect(int b, inout float d[MAX_ARR_SIZE], inout float d0[MAX_ARR_SIZE],  inout float velocX[MAX_ARR_SIZE], inout float velocY[MAX_ARR_SIZE], inout float velocZ[MAX_ARR_SIZE], float dt, int N)
 {
     float i0, i1, j0, j1, k0, k1;
     
@@ -518,25 +500,25 @@ void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  i
                 y    = jfloat - tmp2;
                 z    = kfloat - tmp3;
                 
-                if(x < 0.5f) x = 0.5f; 
-                if(x > Nfloat + 0.5f) x = Nfloat + 0.5f; 
+                if(x < 0.5) x = 0.5; 
+                if(x > Nfloat + 0.5) x = Nfloat + 0.5; 
                 i0 = floor(x); 
-                i1 = i0 + 1.0f;
-                if(y < 0.5f) y = 0.5f; 
-                if(y > Nfloat + 0.5f) y = Nfloat + 0.5f; 
+                i1 = i0 + 1.0;
+                if(y < 0.5) y = 0.5; 
+                if(y > Nfloat + 0.5) y = Nfloat + 0.5; 
                 j0 = floor(y);
                 j1 = j0 + 1.0f; 
-                if(z < 0.5f) z = 0.5f;
-                if(z > Nfloat + 0.5f) z = Nfloat + 0.5f;
+                if(z < 0.5) z = 0.5;
+                if(z > Nfloat + 0.5) z = Nfloat + 0.5;
                 k0 = floor(z);
-                k1 = k0 + 1.0f;
+                k1 = k0 + 1.0;
                 
                 s1 = x - i0; 
-                s0 = 1.0f - s1; 
+                s0 = 1.0 - s1; 
                 t1 = y - j0; 
-                t0 = 1.0f - t1;
+                t0 = 1.0 - t1;
                 u1 = z - k0;
-                u0 = 1.0f - u1;
+                u0 = 1.0 - u1;
                 
                 int i0i = int(i0);
                 int i1i = int(i1);
@@ -591,38 +573,17 @@ uniform float       iSampleRate;
 
 #define SHADER_TOY
 
-    // This is a constraint of GLSL and means N can be no larger than 512
-const int MAX_ARR_SIZE = 67108864;
+    #define EPSILON 1e-4
+#define PI 3.1415926535897932384626433832795
+
+// This is a constraint of GLSL and means N can be no larger than 64
+const int MAX_ARR_SIZE = 512;
 
 int IX(int x, int y, int z, int N) {
     return x + y*N + z*N*N;
 }
 
-float[MAX_ARR_SIZE] getx(vec3[MAX_ARR_SIZE] v, int size) {
-    float x[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        x[i] = v[i].x;
-    }
-    return x;
-}
-
-float[MAX_ARR_SIZE] gety(vec3[MAX_ARR_SIZE] v, int size) {
-    float y[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        y[i] = v[i].y;
-    }
-    return y;
-}
-
-float[MAX_ARR_SIZE] getz(vec3[MAX_ARR_SIZE] v, int size) {
-    float z[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        z[i] = v[i].z;
-    }
-    return z;
-}
-
-void set_bnd(in int b, inout float[MAX_ARR_SIZE] x, int N) {
+void set_bnd(in int b, inout float x[MAX_ARR_SIZE], int N) {
     for(int j = 1; j < N - 1; j++) {
         for(int i = 1; i < N - 1; i++) {
             x[IX(i, j, 0, N)] = b == 3 ? -x[IX(i, j, 1, N)] : x[IX(i, j, 1, N)];
@@ -642,33 +603,33 @@ void set_bnd(in int b, inout float[MAX_ARR_SIZE] x, int N) {
         }
     }
     
-    x[IX(0, 0, 0, N)]       = 0.33f * (x[IX(1, 0, 0, N)]
+    x[IX(0, 0, 0, N)]       = 0.33 * (x[IX(1, 0, 0, N)]
                                   + x[IX(0, 1, 0, N)]
                                   + x[IX(0, 0, 1, N)]);
-    x[IX(0, N-1, 0, N)]     = 0.33f * (x[IX(1, N-1, 0, N)]
+    x[IX(0, N-1, 0, N)]     = 0.33 * (x[IX(1, N-1, 0, N)]
                                   + x[IX(0, N-2, 0, N)]
                                   + x[IX(0, N-1, 1, N)]);
-    x[IX(0, 0, N-1, N)]     = 0.33f * (x[IX(1, 0, N-1, N)]
+    x[IX(0, 0, N-1, N)]     = 0.33 * (x[IX(1, 0, N-1, N)]
                                   + x[IX(0, 1, N-1, N)]
                                   + x[IX(0, 0, N, N)]);
-    x[IX(0, N-1, N-1, N)]   = 0.33f * (x[IX(1, N-1, N-1, N)]
+    x[IX(0, N-1, N-1, N)]   = 0.33 * (x[IX(1, N-1, N-1, N)]
                                   + x[IX(0, N-2, N-1, N)]
                                   + x[IX(0, N-1, N-2, N)]);
-    x[IX(N-1, 0, 0, N)]     = 0.33f * (x[IX(N-2, 0, 0, N)]
+    x[IX(N-1, 0, 0, N)]     = 0.33 * (x[IX(N-2, 0, 0, N)]
                                   + x[IX(N-1, 1, 0, N)]
                                   + x[IX(N-1, 0, 1, N)]);
-    x[IX(N-1, N-1, 0, N)]   = 0.33f * (x[IX(N-2, N-1, 0, N)]
+    x[IX(N-1, N-1, 0, N)]   = 0.33 * (x[IX(N-2, N-1, 0, N)]
                                   + x[IX(N-1, N-2, 0, N)]
                                   + x[IX(N-1, N-1, 1, N)]);
-    x[IX(N-1, 0, N-1, N)]   = 0.33f * (x[IX(N-2, 0, N-1, N)]
+    x[IX(N-1, 0, N-1, N)]   = 0.33 * (x[IX(N-2, 0, N-1, N)]
                                   + x[IX(N-1, 1, N-1, N)]
                                   + x[IX(N-1, 0, N-2, N)]);
-    x[IX(N-1, N-1, N-1, N)] = 0.33f * (x[IX(N-2, N-1, N-1, N)]
+    x[IX(N-1, N-1, N-1, N)] = 0.33 * (x[IX(N-2, N-1, N-1, N)]
                                   + x[IX(N-1, N-2, N-1, N)]
                                   + x[IX(N-1, N-1, N-2, N)]);
 }
 
-void lin_solve(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0, float a, float c, int iter, int N) {
+void lin_solve(int b, inout float x[MAX_ARR_SIZE], inout float x0[MAX_ARR_SIZE], float a, float c, int iter, int N) {
     float cRecip = 1.0 / c;
     for (int k = 0; k < iter; k++) {
         for (int m = 1; m < N - 1; m++) {
@@ -690,12 +651,12 @@ void lin_solve(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0,
     }
 }
 
-void diffuse(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0, float diff, float dt, int iter, int N) {
+void diffuse(int b, inout float x[MAX_ARR_SIZE], inout float x0[MAX_ARR_SIZE], float diff, float dt, int iter, int N) {
     float a = dt * diff * float(N - 2) * float(N - 2);
     lin_solve(b, x, x0, a, 1. + 6. * a, iter, N);
 }
 
-void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY, inout float[MAX_ARR_SIZE] velocZ, inout float[MAX_ARR_SIZE] p, inout float[MAX_ARR_SIZE] div, int iter, int N) {
+void project(inout float velocX[MAX_ARR_SIZE], inout float velocY[MAX_ARR_SIZE], inout float velocZ[MAX_ARR_SIZE], inout float p[MAX_ARR_SIZE], inout float div[MAX_ARR_SIZE], int iter, int N) {
     for (int k = 1; k < N - 1; k++) {
         for (int j = 1; j < N - 1; j++) {
             for (int i = 1; i < N - 1; i++) {
@@ -718,11 +679,11 @@ void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY,
     for (int k = 1; k < N - 1; k++) {
         for (int j = 1; j < N - 1; j++) {
             for (int i = 1; i < N - 1; i++) {
-                velocX[IX(i, j, k, N)] -= 0.5f * (  p[IX(i+1, j, k, N)]
+                velocX[IX(i, j, k, N)] -= 0.5* (  p[IX(i+1, j, k, N)]
                                                 -p[IX(i-1, j, k, N)]) * float(N);
-                velocY[IX(i, j, k, N)] -= 0.5f * (  p[IX(i, j+1, k, N)]
+                velocY[IX(i, j, k, N)] -= 0.5 * (  p[IX(i, j+1, k, N)]
                                                 -p[IX(i, j-1, k, N)]) * float(N);
-                velocZ[IX(i, j, k, N)] -= 0.5f * (  p[IX(i, j, k+1, N)]
+                velocZ[IX(i, j, k, N)] -= 0.5 * (  p[IX(i, j, k+1, N)]
                                                 -p[IX(i, j, k-1, N)]) * float(N);
             }
         }
@@ -732,7 +693,7 @@ void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY,
     set_bnd(3, velocZ, N);
 }
 
-void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY, inout float[MAX_ARR_SIZE] velocZ, float dt, int N)
+void advect(int b, inout float d[MAX_ARR_SIZE], inout float d0[MAX_ARR_SIZE],  inout float velocX[MAX_ARR_SIZE], inout float velocY[MAX_ARR_SIZE], inout float velocZ[MAX_ARR_SIZE], float dt, int N)
 {
     float i0, i1, j0, j1, k0, k1;
     
@@ -757,25 +718,25 @@ void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  i
                 y    = jfloat - tmp2;
                 z    = kfloat - tmp3;
                 
-                if(x < 0.5f) x = 0.5f; 
-                if(x > Nfloat + 0.5f) x = Nfloat + 0.5f; 
+                if(x < 0.5) x = 0.5; 
+                if(x > Nfloat + 0.5) x = Nfloat + 0.5; 
                 i0 = floor(x); 
-                i1 = i0 + 1.0f;
-                if(y < 0.5f) y = 0.5f; 
-                if(y > Nfloat + 0.5f) y = Nfloat + 0.5f; 
+                i1 = i0 + 1.0;
+                if(y < 0.5) y = 0.5; 
+                if(y > Nfloat + 0.5) y = Nfloat + 0.5; 
                 j0 = floor(y);
                 j1 = j0 + 1.0f; 
-                if(z < 0.5f) z = 0.5f;
-                if(z > Nfloat + 0.5f) z = Nfloat + 0.5f;
+                if(z < 0.5) z = 0.5;
+                if(z > Nfloat + 0.5) z = Nfloat + 0.5;
                 k0 = floor(z);
-                k1 = k0 + 1.0f;
+                k1 = k0 + 1.0;
                 
                 s1 = x - i0; 
-                s0 = 1.0f - s1; 
+                s0 = 1.0 - s1; 
                 t1 = y - j0; 
-                t0 = 1.0f - t1;
+                t0 = 1.0 - t1;
                 u1 = z - k0;
-                u0 = 1.0f - u1;
+                u0 = 1.0 - u1;
                 
                 int i0i = int(i0);
                 int i1i = int(i1);
@@ -803,71 +764,86 @@ void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  i
 
 
 struct FluidCube {
-    float size;
+    float scale;
+    vec3 center;
+    int size;
     float dt;
     float diff;
     float visc;
 
-    float[MAX_ARR_SIZE] pdensity;
-    float[MAX_ARR_SIZE] density;
+    float pdensity[MAX_ARR_SIZE];
+    float density[MAX_ARR_SIZE];
 
-    vec3[MAX_ARR_SIZE] V;
+    float Vx[MAX_ARR_SIZE];
+    float Vy[MAX_ARR_SIZE];
+    float Vz[MAX_ARR_SIZE];
 
-    vec3[MAX_ARR_SIZE] V0;
+    float Vx0[MAX_ARR_SIZE];
+    float Vy0[MAX_ARR_SIZE];
+    float Vz0[MAX_ARR_SIZE];
 };
 
-// FluidCube fc_create(int size, int diffusion, int viscosity, float dt) {
-//     float pdensity[MAX_ARR_SIZE];
-//     float density[MAX_ARR_SIZE];
-//     vec3 V[MAX_ARR_SIZE];
-//     vec3 V0[MAX_ARR_SIZE];
+FluidCube fc_create(float scale, vec3 center, int size, float diffusion, float viscosity, float dt) {
+    float pdensity[MAX_ARR_SIZE];
+    float density[MAX_ARR_SIZE];
+    float Vx[MAX_ARR_SIZE];
+    float Vy[MAX_ARR_SIZE];
+    float Vz[MAX_ARR_SIZE];
 
-//     FluidCube c = FluidCube(
-//         size,
-//         dt,
-//         diffusion,
-//         viscosity,
-//         pdensity,
-//         density,
-//         V,
-//         V0
-//     );
-//     return c;
-// }
+    float Vx0[MAX_ARR_SIZE];
+    float Vy0[MAX_ARR_SIZE];
+    float Vz0[MAX_ARR_SIZE];
 
-// void fc_add_density(inout FluidCube c, int x, int y, int z, float amt) {
-//     int N = c.size;
-//     int index = IX(x, y, z, N);
-//     c.density[index] += amt;
-// }
+    FluidCube c = FluidCube(
+        scale,
+        center,
+        size,
+        dt,
+        diffusion,
+        viscosity,
+        pdensity,
+        density,
+        Vx, 
+        Vy,
+        Vz,
+        Vx0,
+        Vy0,
+        Vz0
+    );
+    return c;
+}
 
-// void fc_add_velocity(inout FluidCube c, int x, int y, int z, float amtX, float amtY, float amtZ) {
+// void fc_add_density(inout FluidCube cube, int x, int y, int z, float amt) {
 //     int N = cube.size;
 //     int index = IX(x, y, z, N);
-//     vec3 amtV = vec3(amtX, amtY, amtZ);
-
-//     cube.V[index] += amtV;
+//     cube.density[index] += amt;
 // }
 
-// void fc_step(inout FluidCube c) {
+// void fc_add_velocity(inout FluidCube cube, int x, int y, int z, float amtX, float amtY, float amtZ) {
+//     int N = cube.size;
+//     int index = IX(x, y, z, N);
+
+//     cube.Vx[index] += amtX;
+//     cube.Vy[index] += amtY;
+//     cube.Vz[index] += amtZ;
+// }
+
+// void fc_step(inout FluidCube cube) {
 //     int N          = cube.size;
 //     float visc     = cube.visc;
 //     float diff     = cube.diff;
 //     float dt       = cube.dt;
 
-//     vec3[] V = cube.V;
-//     vec3[] V0 = cube.V0;
+//     float Vx[MAX_ARR_SIZE] = cube.Vx;
+//     float Vy[MAX_ARR_SIZE] = cube.Vy;
+//     float Vz[MAX_ARR_SIZE] = cube.Vz;
 
-//     float[MAX_ARR_SIZE] Vx = getx(V);
-//     float[MAX_ARR_SIZE] Vy = gety(V);
-//     float[MAX_ARR_SIZE] Vz = getz(V);
+//     float Vx0[MAX_ARR_SIZE] = cube.Vx0;
+//     float Vy0[MAX_ARR_SIZE] = cube.Vy0;
+//     float Vz0[MAX_ARR_SIZE] = cube.Vz0;
 
-//     float[MAX_ARR_SIZE] Vx0 = getx(V0);
-//     float[MAX_ARR_SIZE] Vy0 = gety(V0);
-//     float[MAX_ARR_SIZE] Vz0 = getz(V0);
-
-//     float[] s = cube.pdensity;;
-//     float[] density = cube.density;
+//     float s[MAX_ARR_SIZE] = cube.pdensity;;
+//     float density[MAX_ARR_SIZE] = cube.density;
     
 //     diffuse(1, Vx0, Vx, visc, dt, 4, N);
 //     diffuse(2, Vy0, Vy, visc, dt, 4, N);
@@ -884,6 +860,58 @@ struct FluidCube {
 //     diffuse(0, s, density, diff, dt, 4, N);
 //     advect(0, density, s, Vx, Vy, Vz, dt, N);
 // }
+
+// float fc_point_density(in FluidCube cube, in vec3 point) {
+//     int N = cube.size;
+//     // naive -> improve to binary search later
+//     vec3 bottomLeft = cube.center - vec3(float(N)*cube.scale / 2.);
+//     for (int i = 0; i < N; i ++) {
+//         for (int j = 0; j < N; j ++) {
+//             for (int k = 0; k < N; k ++) {
+//                 float xLB = bottomLeft.x + (cube.scale * float(i)) + cube.scale * 0.;
+//                 float xGB = bottomLeft.x + (cube.scale * float(i)) + cube.scale * 1.0;
+//                 float yLB = bottomLeft.y + (cube.scale * float(j)) + cube.scale * 0.;
+//                 float yGB = bottomLeft.y + (cube.scale * float(j)) + cube.scale * 1.0;
+//                 float zLB = bottomLeft.z + (cube.scale * float(k)) + cube.scale * 0.;
+//                 float zGB = bottomLeft.z + (cube.scale * float(k)) + cube.scale * 1.0;
+//                 if (point.x > xLB && point.x < xGB && point.y > yLB && point.y < yGB && point.z > zLB && point.z < zGB) {
+//                     return cube.density[IX(i, j, k, N)];
+//                 }
+//             }
+//         }
+//     }
+//     return 0.;
+// }
+
+float sdBox(vec3 p, vec3 half_bounds) {
+    float d = 0.;
+    if (abs(p.x) < half_bounds.x && abs(p.y) < half_bounds.y && abs(p.z) < half_bounds.z) {
+        return max(max(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y), abs(p.z) - half_bounds.z);
+    } else if (abs(p.x) < half_bounds.x) {
+        if (abs(p.y) < half_bounds.y) {
+            d = abs(p.z) - half_bounds.z;
+        } else {
+            if (abs(p.z) < half_bounds.z) {
+                d = abs(p.y) - half_bounds.y;
+            } else {
+                d = length(vec2(abs(p.y) - half_bounds.y, abs(p.z) - half_bounds.z));
+            }
+        }
+    } else if (abs(p.y) <= half_bounds.y) {
+        if (abs(p.z) <= half_bounds.z) {
+            d = abs(p.x) - half_bounds.x;
+        } else {
+            d = length(vec2(abs(p.x) - half_bounds.x, abs(p.z) - half_bounds.z));
+        }
+    } else {
+        if (abs(p.z) <= half_bounds.z) {
+            d = length(vec2(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y));
+        } else {
+            d = length(vec3(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y, abs(p.z) - half_bounds.z));
+        }
+    }
+    return d;
+}
     void main() {}
 </script><script id='/Users/siddharthhathi/Library/CloudStorage/OneDrive-Personal/Everything/Documents/School/dart/23S/cs77/77FinalProject/scene.glsl' type='x-shader/x-fragment'>#version 300 es
     precision highp float;
@@ -937,6 +965,7 @@ struct HitRecord {
     vec3 normal;
     float t;
     bool front_face;
+    // float dm;
     Material mat;
 };
 
@@ -974,42 +1003,22 @@ bool sphere_hit(in Sphere s, Ray r, float t_min, float t_max, inout HitRecord re
     rec.p = ray_pointAt(r, rec.t);
     vec3 outward_normal = normalize((rec.p - s.center) / s.radius);
     hr_set_face_normal(rec, r, outward_normal);
+    // rec.dm = 1.;
     // rec.mat = s.mat;
 
     return true;
 }
-// This is a constraint of GLSL and means N can be no larger than 512
-const int MAX_ARR_SIZE = 67108864;
+#define EPSILON 1e-4
+#define PI 3.1415926535897932384626433832795
+
+// This is a constraint of GLSL and means N can be no larger than 64
+const int MAX_ARR_SIZE = 512;
 
 int IX(int x, int y, int z, int N) {
     return x + y*N + z*N*N;
 }
 
-float[MAX_ARR_SIZE] getx(vec3[MAX_ARR_SIZE] v, int size) {
-    float x[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        x[i] = v[i].x;
-    }
-    return x;
-}
-
-float[MAX_ARR_SIZE] gety(vec3[MAX_ARR_SIZE] v, int size) {
-    float y[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        y[i] = v[i].y;
-    }
-    return y;
-}
-
-float[MAX_ARR_SIZE] getz(vec3[MAX_ARR_SIZE] v, int size) {
-    float z[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        z[i] = v[i].z;
-    }
-    return z;
-}
-
-void set_bnd(in int b, inout float[MAX_ARR_SIZE] x, int N) {
+void set_bnd(in int b, inout float x[MAX_ARR_SIZE], int N) {
     for(int j = 1; j < N - 1; j++) {
         for(int i = 1; i < N - 1; i++) {
             x[IX(i, j, 0, N)] = b == 3 ? -x[IX(i, j, 1, N)] : x[IX(i, j, 1, N)];
@@ -1029,33 +1038,33 @@ void set_bnd(in int b, inout float[MAX_ARR_SIZE] x, int N) {
         }
     }
     
-    x[IX(0, 0, 0, N)]       = 0.33f * (x[IX(1, 0, 0, N)]
+    x[IX(0, 0, 0, N)]       = 0.33 * (x[IX(1, 0, 0, N)]
                                   + x[IX(0, 1, 0, N)]
                                   + x[IX(0, 0, 1, N)]);
-    x[IX(0, N-1, 0, N)]     = 0.33f * (x[IX(1, N-1, 0, N)]
+    x[IX(0, N-1, 0, N)]     = 0.33 * (x[IX(1, N-1, 0, N)]
                                   + x[IX(0, N-2, 0, N)]
                                   + x[IX(0, N-1, 1, N)]);
-    x[IX(0, 0, N-1, N)]     = 0.33f * (x[IX(1, 0, N-1, N)]
+    x[IX(0, 0, N-1, N)]     = 0.33 * (x[IX(1, 0, N-1, N)]
                                   + x[IX(0, 1, N-1, N)]
                                   + x[IX(0, 0, N, N)]);
-    x[IX(0, N-1, N-1, N)]   = 0.33f * (x[IX(1, N-1, N-1, N)]
+    x[IX(0, N-1, N-1, N)]   = 0.33 * (x[IX(1, N-1, N-1, N)]
                                   + x[IX(0, N-2, N-1, N)]
                                   + x[IX(0, N-1, N-2, N)]);
-    x[IX(N-1, 0, 0, N)]     = 0.33f * (x[IX(N-2, 0, 0, N)]
+    x[IX(N-1, 0, 0, N)]     = 0.33 * (x[IX(N-2, 0, 0, N)]
                                   + x[IX(N-1, 1, 0, N)]
                                   + x[IX(N-1, 0, 1, N)]);
-    x[IX(N-1, N-1, 0, N)]   = 0.33f * (x[IX(N-2, N-1, 0, N)]
+    x[IX(N-1, N-1, 0, N)]   = 0.33 * (x[IX(N-2, N-1, 0, N)]
                                   + x[IX(N-1, N-2, 0, N)]
                                   + x[IX(N-1, N-1, 1, N)]);
-    x[IX(N-1, 0, N-1, N)]   = 0.33f * (x[IX(N-2, 0, N-1, N)]
+    x[IX(N-1, 0, N-1, N)]   = 0.33 * (x[IX(N-2, 0, N-1, N)]
                                   + x[IX(N-1, 1, N-1, N)]
                                   + x[IX(N-1, 0, N-2, N)]);
-    x[IX(N-1, N-1, N-1, N)] = 0.33f * (x[IX(N-2, N-1, N-1, N)]
+    x[IX(N-1, N-1, N-1, N)] = 0.33 * (x[IX(N-2, N-1, N-1, N)]
                                   + x[IX(N-1, N-2, N-1, N)]
                                   + x[IX(N-1, N-1, N-2, N)]);
 }
 
-void lin_solve(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0, float a, float c, int iter, int N) {
+void lin_solve(int b, inout float x[MAX_ARR_SIZE], inout float x0[MAX_ARR_SIZE], float a, float c, int iter, int N) {
     float cRecip = 1.0 / c;
     for (int k = 0; k < iter; k++) {
         for (int m = 1; m < N - 1; m++) {
@@ -1077,12 +1086,12 @@ void lin_solve(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0,
     }
 }
 
-void diffuse(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0, float diff, float dt, int iter, int N) {
+void diffuse(int b, inout float x[MAX_ARR_SIZE], inout float x0[MAX_ARR_SIZE], float diff, float dt, int iter, int N) {
     float a = dt * diff * float(N - 2) * float(N - 2);
     lin_solve(b, x, x0, a, 1. + 6. * a, iter, N);
 }
 
-void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY, inout float[MAX_ARR_SIZE] velocZ, inout float[MAX_ARR_SIZE] p, inout float[MAX_ARR_SIZE] div, int iter, int N) {
+void project(inout float velocX[MAX_ARR_SIZE], inout float velocY[MAX_ARR_SIZE], inout float velocZ[MAX_ARR_SIZE], inout float p[MAX_ARR_SIZE], inout float div[MAX_ARR_SIZE], int iter, int N) {
     for (int k = 1; k < N - 1; k++) {
         for (int j = 1; j < N - 1; j++) {
             for (int i = 1; i < N - 1; i++) {
@@ -1105,11 +1114,11 @@ void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY,
     for (int k = 1; k < N - 1; k++) {
         for (int j = 1; j < N - 1; j++) {
             for (int i = 1; i < N - 1; i++) {
-                velocX[IX(i, j, k, N)] -= 0.5f * (  p[IX(i+1, j, k, N)]
+                velocX[IX(i, j, k, N)] -= 0.5* (  p[IX(i+1, j, k, N)]
                                                 -p[IX(i-1, j, k, N)]) * float(N);
-                velocY[IX(i, j, k, N)] -= 0.5f * (  p[IX(i, j+1, k, N)]
+                velocY[IX(i, j, k, N)] -= 0.5 * (  p[IX(i, j+1, k, N)]
                                                 -p[IX(i, j-1, k, N)]) * float(N);
-                velocZ[IX(i, j, k, N)] -= 0.5f * (  p[IX(i, j, k+1, N)]
+                velocZ[IX(i, j, k, N)] -= 0.5 * (  p[IX(i, j, k+1, N)]
                                                 -p[IX(i, j, k-1, N)]) * float(N);
             }
         }
@@ -1119,7 +1128,7 @@ void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY,
     set_bnd(3, velocZ, N);
 }
 
-void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY, inout float[MAX_ARR_SIZE] velocZ, float dt, int N)
+void advect(int b, inout float d[MAX_ARR_SIZE], inout float d0[MAX_ARR_SIZE],  inout float velocX[MAX_ARR_SIZE], inout float velocY[MAX_ARR_SIZE], inout float velocZ[MAX_ARR_SIZE], float dt, int N)
 {
     float i0, i1, j0, j1, k0, k1;
     
@@ -1144,25 +1153,25 @@ void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  i
                 y    = jfloat - tmp2;
                 z    = kfloat - tmp3;
                 
-                if(x < 0.5f) x = 0.5f; 
-                if(x > Nfloat + 0.5f) x = Nfloat + 0.5f; 
+                if(x < 0.5) x = 0.5; 
+                if(x > Nfloat + 0.5) x = Nfloat + 0.5; 
                 i0 = floor(x); 
-                i1 = i0 + 1.0f;
-                if(y < 0.5f) y = 0.5f; 
-                if(y > Nfloat + 0.5f) y = Nfloat + 0.5f; 
+                i1 = i0 + 1.0;
+                if(y < 0.5) y = 0.5; 
+                if(y > Nfloat + 0.5) y = Nfloat + 0.5; 
                 j0 = floor(y);
                 j1 = j0 + 1.0f; 
-                if(z < 0.5f) z = 0.5f;
-                if(z > Nfloat + 0.5f) z = Nfloat + 0.5f;
+                if(z < 0.5) z = 0.5;
+                if(z > Nfloat + 0.5) z = Nfloat + 0.5;
                 k0 = floor(z);
-                k1 = k0 + 1.0f;
+                k1 = k0 + 1.0;
                 
                 s1 = x - i0; 
-                s0 = 1.0f - s1; 
+                s0 = 1.0 - s1; 
                 t1 = y - j0; 
-                t0 = 1.0f - t1;
+                t0 = 1.0 - t1;
                 u1 = z - k0;
-                u0 = 1.0f - u1;
+                u0 = 1.0 - u1;
                 
                 int i0i = int(i0);
                 int i1i = int(i1);
@@ -1190,71 +1199,86 @@ void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  i
 
 
 struct FluidCube {
-    float size;
+    float scale;
+    vec3 center;
+    int size;
     float dt;
     float diff;
     float visc;
 
-    float[MAX_ARR_SIZE] pdensity;
-    float[MAX_ARR_SIZE] density;
+    float pdensity[MAX_ARR_SIZE];
+    float density[MAX_ARR_SIZE];
 
-    vec3[MAX_ARR_SIZE] V;
+    float Vx[MAX_ARR_SIZE];
+    float Vy[MAX_ARR_SIZE];
+    float Vz[MAX_ARR_SIZE];
 
-    vec3[MAX_ARR_SIZE] V0;
+    float Vx0[MAX_ARR_SIZE];
+    float Vy0[MAX_ARR_SIZE];
+    float Vz0[MAX_ARR_SIZE];
 };
 
-// FluidCube fc_create(int size, int diffusion, int viscosity, float dt) {
-//     float pdensity[MAX_ARR_SIZE];
-//     float density[MAX_ARR_SIZE];
-//     vec3 V[MAX_ARR_SIZE];
-//     vec3 V0[MAX_ARR_SIZE];
+FluidCube fc_create(float scale, vec3 center, int size, float diffusion, float viscosity, float dt) {
+    float pdensity[MAX_ARR_SIZE];
+    float density[MAX_ARR_SIZE];
+    float Vx[MAX_ARR_SIZE];
+    float Vy[MAX_ARR_SIZE];
+    float Vz[MAX_ARR_SIZE];
 
-//     FluidCube c = FluidCube(
-//         size,
-//         dt,
-//         diffusion,
-//         viscosity,
-//         pdensity,
-//         density,
-//         V,
-//         V0
-//     );
-//     return c;
-// }
+    float Vx0[MAX_ARR_SIZE];
+    float Vy0[MAX_ARR_SIZE];
+    float Vz0[MAX_ARR_SIZE];
 
-// void fc_add_density(inout FluidCube c, int x, int y, int z, float amt) {
-//     int N = c.size;
-//     int index = IX(x, y, z, N);
-//     c.density[index] += amt;
-// }
+    FluidCube c = FluidCube(
+        scale,
+        center,
+        size,
+        dt,
+        diffusion,
+        viscosity,
+        pdensity,
+        density,
+        Vx, 
+        Vy,
+        Vz,
+        Vx0,
+        Vy0,
+        Vz0
+    );
+    return c;
+}
 
-// void fc_add_velocity(inout FluidCube c, int x, int y, int z, float amtX, float amtY, float amtZ) {
+// void fc_add_density(inout FluidCube cube, int x, int y, int z, float amt) {
 //     int N = cube.size;
 //     int index = IX(x, y, z, N);
-//     vec3 amtV = vec3(amtX, amtY, amtZ);
-
-//     cube.V[index] += amtV;
+//     cube.density[index] += amt;
 // }
 
-// void fc_step(inout FluidCube c) {
+// void fc_add_velocity(inout FluidCube cube, int x, int y, int z, float amtX, float amtY, float amtZ) {
+//     int N = cube.size;
+//     int index = IX(x, y, z, N);
+
+//     cube.Vx[index] += amtX;
+//     cube.Vy[index] += amtY;
+//     cube.Vz[index] += amtZ;
+// }
+
+// void fc_step(inout FluidCube cube) {
 //     int N          = cube.size;
 //     float visc     = cube.visc;
 //     float diff     = cube.diff;
 //     float dt       = cube.dt;
 
-//     vec3[] V = cube.V;
-//     vec3[] V0 = cube.V0;
+//     float Vx[MAX_ARR_SIZE] = cube.Vx;
+//     float Vy[MAX_ARR_SIZE] = cube.Vy;
+//     float Vz[MAX_ARR_SIZE] = cube.Vz;
 
-//     float[MAX_ARR_SIZE] Vx = getx(V);
-//     float[MAX_ARR_SIZE] Vy = gety(V);
-//     float[MAX_ARR_SIZE] Vz = getz(V);
+//     float Vx0[MAX_ARR_SIZE] = cube.Vx0;
+//     float Vy0[MAX_ARR_SIZE] = cube.Vy0;
+//     float Vz0[MAX_ARR_SIZE] = cube.Vz0;
 
-//     float[MAX_ARR_SIZE] Vx0 = getx(V0);
-//     float[MAX_ARR_SIZE] Vy0 = gety(V0);
-//     float[MAX_ARR_SIZE] Vz0 = getz(V0);
-
-//     float[] s = cube.pdensity;;
-//     float[] density = cube.density;
+//     float s[MAX_ARR_SIZE] = cube.pdensity;;
+//     float density[MAX_ARR_SIZE] = cube.density;
     
 //     diffuse(1, Vx0, Vx, visc, dt, 4, N);
 //     diffuse(2, Vy0, Vy, visc, dt, 4, N);
@@ -1272,23 +1296,111 @@ struct FluidCube {
 //     advect(0, density, s, Vx, Vy, Vz, dt, N);
 // }
 
+// float fc_point_density(in FluidCube cube, in vec3 point) {
+//     int N = cube.size;
+//     // naive -> improve to binary search later
+//     vec3 bottomLeft = cube.center - vec3(float(N)*cube.scale / 2.);
+//     for (int i = 0; i < N; i ++) {
+//         for (int j = 0; j < N; j ++) {
+//             for (int k = 0; k < N; k ++) {
+//                 float xLB = bottomLeft.x + (cube.scale * float(i)) + cube.scale * 0.;
+//                 float xGB = bottomLeft.x + (cube.scale * float(i)) + cube.scale * 1.0;
+//                 float yLB = bottomLeft.y + (cube.scale * float(j)) + cube.scale * 0.;
+//                 float yGB = bottomLeft.y + (cube.scale * float(j)) + cube.scale * 1.0;
+//                 float zLB = bottomLeft.z + (cube.scale * float(k)) + cube.scale * 0.;
+//                 float zGB = bottomLeft.z + (cube.scale * float(k)) + cube.scale * 1.0;
+//                 if (point.x > xLB && point.x < xGB && point.y > yLB && point.y < yGB && point.z > zLB && point.z < zGB) {
+//                     return cube.density[IX(i, j, k, N)];
+//                 }
+//             }
+//         }
+//     }
+//     return 0.;
+// }
+
+float sdBox(vec3 p, vec3 half_bounds) {
+    float d = 0.;
+    if (abs(p.x) < half_bounds.x && abs(p.y) < half_bounds.y && abs(p.z) < half_bounds.z) {
+        return max(max(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y), abs(p.z) - half_bounds.z);
+    } else if (abs(p.x) < half_bounds.x) {
+        if (abs(p.y) < half_bounds.y) {
+            d = abs(p.z) - half_bounds.z;
+        } else {
+            if (abs(p.z) < half_bounds.z) {
+                d = abs(p.y) - half_bounds.y;
+            } else {
+                d = length(vec2(abs(p.y) - half_bounds.y, abs(p.z) - half_bounds.z));
+            }
+        }
+    } else if (abs(p.y) <= half_bounds.y) {
+        if (abs(p.z) <= half_bounds.z) {
+            d = abs(p.x) - half_bounds.x;
+        } else {
+            d = length(vec2(abs(p.x) - half_bounds.x, abs(p.z) - half_bounds.z));
+        }
+    } else {
+        if (abs(p.z) <= half_bounds.z) {
+            d = length(vec2(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y));
+        } else {
+            d = length(vec3(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y, abs(p.z) - half_bounds.z));
+        }
+    }
+    return d;
+}
+
 struct Scene {
     Sphere sphere;
-    Fluid fluid;
+    FluidCube cube;
 };
 
 Scene sc_init() {
-    Sphere sphere = Sphere(vec3(0.;, 0., -1.), 0.5);
-    Fluid fluid = fc_create(256, 0.2, 0, 0.000001);
+    Sphere sphere = Sphere(vec3(0., 0., -1.), 0.5);
+    FluidCube cube = fc_create(1.0, vec3(0., 0., -0.5), 2, 0.2, 0., 0.0001);
+    // fc_add_density(cube, 0, 0, 0, 0.2);
+    // fc_add_velocity(cube, 0, 0, 0, 10., 10., 10.);
     return Scene(
         sphere,
-        fluid
+        cube
     );
 }
 
+// bool rayFluidInteract(in FluidCube cube, in Ray r, float t_min, float t_max, inout HitRecord rec) {
+//     // Strategy -> treat the cube like an actual cube
+//     // find closest hit point and normal
+//     // reflect based on the density of the cube at the hit point coord
+//     // requires being able to look up the density at a point
+//     int iters = 1;
+//     int max_iter = 10;
+//     vec3 loc = r.origin;
+//     bool hit = false;
+//     float step_size = 1.;
+//     while (!hit && iters < max_iter) {
+//         float half_length = cube.scale * float(cube.size) / 2.;
+//         vec3 half_bounds = vec3(
+//             cube.center.x + half_length,
+//             cube.center.y + half_length,
+//             cube.center.z + half_length
+//         );
+//         step_size = sdBox(loc, half_bounds);
+//         loc = loc + r.direction * step_size;
+//         if (step_size < EPSILON) {
+//             hit = true;
+//             // float density = fc_point_density(cube, loc);
+//             rec.t = length((loc  - r.origin))/length(r.direction);
+//             rec.p = loc;
+//             // rec.dm =  min(1., density / 255.);
+//             vec3 outward_normal = normalize((rec.p - cube.center));
+//             hr_set_face_normal(rec, r, outward_normal);
+//             return true;
+//         }
+//         iters += 1;
+//     }
+//     return false;
+// }
+
 vec3 sc_ray_color(in Scene s, in Ray r) {
     HitRecord rec;
-    if (sphere_hit(s.sphere, r, 0., 1./0., rec)) {
+    if (sphere_hit(s.sphere, r, 0., 1./0., rec) ) {
         return 0.5 * (rec.normal + vec3(1., 1., 1.));
     }
     vec3 unit_dir = normalize(r.direction);
@@ -1317,6 +1429,7 @@ vec3 sc_col(in Scene s) {
     float u = uv.x;
     float v = uv.y;
     Ray ray = Ray(origin, lower_left_corner + u*horizontal + v*vertical - origin);
+    // fc_step(s.cube);
     return sc_ray_color(s, ray);
 }
     void main() {}
@@ -1373,6 +1486,7 @@ struct HitRecord {
     vec3 normal;
     float t;
     bool front_face;
+    // float dm;
     Material mat;
 };
 
@@ -1410,42 +1524,22 @@ bool sphere_hit(in Sphere s, Ray r, float t_min, float t_max, inout HitRecord re
     rec.p = ray_pointAt(r, rec.t);
     vec3 outward_normal = normalize((rec.p - s.center) / s.radius);
     hr_set_face_normal(rec, r, outward_normal);
+    // rec.dm = 1.;
     // rec.mat = s.mat;
 
     return true;
 }
-// This is a constraint of GLSL and means N can be no larger than 512
-const int MAX_ARR_SIZE = 67108864;
+#define EPSILON 1e-4
+#define PI 3.1415926535897932384626433832795
+
+// This is a constraint of GLSL and means N can be no larger than 64
+const int MAX_ARR_SIZE = 512;
 
 int IX(int x, int y, int z, int N) {
     return x + y*N + z*N*N;
 }
 
-float[MAX_ARR_SIZE] getx(vec3[MAX_ARR_SIZE] v, int size) {
-    float x[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        x[i] = v[i].x;
-    }
-    return x;
-}
-
-float[MAX_ARR_SIZE] gety(vec3[MAX_ARR_SIZE] v, int size) {
-    float y[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        y[i] = v[i].y;
-    }
-    return y;
-}
-
-float[MAX_ARR_SIZE] getz(vec3[MAX_ARR_SIZE] v, int size) {
-    float z[MAX_ARR_SIZE];
-    for (int i = 0; i < size; i++) {
-        z[i] = v[i].z;
-    }
-    return z;
-}
-
-void set_bnd(in int b, inout float[MAX_ARR_SIZE] x, int N) {
+void set_bnd(in int b, inout float x[MAX_ARR_SIZE], int N) {
     for(int j = 1; j < N - 1; j++) {
         for(int i = 1; i < N - 1; i++) {
             x[IX(i, j, 0, N)] = b == 3 ? -x[IX(i, j, 1, N)] : x[IX(i, j, 1, N)];
@@ -1465,33 +1559,33 @@ void set_bnd(in int b, inout float[MAX_ARR_SIZE] x, int N) {
         }
     }
     
-    x[IX(0, 0, 0, N)]       = 0.33f * (x[IX(1, 0, 0, N)]
+    x[IX(0, 0, 0, N)]       = 0.33 * (x[IX(1, 0, 0, N)]
                                   + x[IX(0, 1, 0, N)]
                                   + x[IX(0, 0, 1, N)]);
-    x[IX(0, N-1, 0, N)]     = 0.33f * (x[IX(1, N-1, 0, N)]
+    x[IX(0, N-1, 0, N)]     = 0.33 * (x[IX(1, N-1, 0, N)]
                                   + x[IX(0, N-2, 0, N)]
                                   + x[IX(0, N-1, 1, N)]);
-    x[IX(0, 0, N-1, N)]     = 0.33f * (x[IX(1, 0, N-1, N)]
+    x[IX(0, 0, N-1, N)]     = 0.33 * (x[IX(1, 0, N-1, N)]
                                   + x[IX(0, 1, N-1, N)]
                                   + x[IX(0, 0, N, N)]);
-    x[IX(0, N-1, N-1, N)]   = 0.33f * (x[IX(1, N-1, N-1, N)]
+    x[IX(0, N-1, N-1, N)]   = 0.33 * (x[IX(1, N-1, N-1, N)]
                                   + x[IX(0, N-2, N-1, N)]
                                   + x[IX(0, N-1, N-2, N)]);
-    x[IX(N-1, 0, 0, N)]     = 0.33f * (x[IX(N-2, 0, 0, N)]
+    x[IX(N-1, 0, 0, N)]     = 0.33 * (x[IX(N-2, 0, 0, N)]
                                   + x[IX(N-1, 1, 0, N)]
                                   + x[IX(N-1, 0, 1, N)]);
-    x[IX(N-1, N-1, 0, N)]   = 0.33f * (x[IX(N-2, N-1, 0, N)]
+    x[IX(N-1, N-1, 0, N)]   = 0.33 * (x[IX(N-2, N-1, 0, N)]
                                   + x[IX(N-1, N-2, 0, N)]
                                   + x[IX(N-1, N-1, 1, N)]);
-    x[IX(N-1, 0, N-1, N)]   = 0.33f * (x[IX(N-2, 0, N-1, N)]
+    x[IX(N-1, 0, N-1, N)]   = 0.33 * (x[IX(N-2, 0, N-1, N)]
                                   + x[IX(N-1, 1, N-1, N)]
                                   + x[IX(N-1, 0, N-2, N)]);
-    x[IX(N-1, N-1, N-1, N)] = 0.33f * (x[IX(N-2, N-1, N-1, N)]
+    x[IX(N-1, N-1, N-1, N)] = 0.33 * (x[IX(N-2, N-1, N-1, N)]
                                   + x[IX(N-1, N-2, N-1, N)]
                                   + x[IX(N-1, N-1, N-2, N)]);
 }
 
-void lin_solve(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0, float a, float c, int iter, int N) {
+void lin_solve(int b, inout float x[MAX_ARR_SIZE], inout float x0[MAX_ARR_SIZE], float a, float c, int iter, int N) {
     float cRecip = 1.0 / c;
     for (int k = 0; k < iter; k++) {
         for (int m = 1; m < N - 1; m++) {
@@ -1513,12 +1607,12 @@ void lin_solve(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0,
     }
 }
 
-void diffuse(int b, inout float[MAX_ARR_SIZE] x, inout float[MAX_ARR_SIZE] x0, float diff, float dt, int iter, int N) {
+void diffuse(int b, inout float x[MAX_ARR_SIZE], inout float x0[MAX_ARR_SIZE], float diff, float dt, int iter, int N) {
     float a = dt * diff * float(N - 2) * float(N - 2);
     lin_solve(b, x, x0, a, 1. + 6. * a, iter, N);
 }
 
-void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY, inout float[MAX_ARR_SIZE] velocZ, inout float[MAX_ARR_SIZE] p, inout float[MAX_ARR_SIZE] div, int iter, int N) {
+void project(inout float velocX[MAX_ARR_SIZE], inout float velocY[MAX_ARR_SIZE], inout float velocZ[MAX_ARR_SIZE], inout float p[MAX_ARR_SIZE], inout float div[MAX_ARR_SIZE], int iter, int N) {
     for (int k = 1; k < N - 1; k++) {
         for (int j = 1; j < N - 1; j++) {
             for (int i = 1; i < N - 1; i++) {
@@ -1541,11 +1635,11 @@ void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY,
     for (int k = 1; k < N - 1; k++) {
         for (int j = 1; j < N - 1; j++) {
             for (int i = 1; i < N - 1; i++) {
-                velocX[IX(i, j, k, N)] -= 0.5f * (  p[IX(i+1, j, k, N)]
+                velocX[IX(i, j, k, N)] -= 0.5* (  p[IX(i+1, j, k, N)]
                                                 -p[IX(i-1, j, k, N)]) * float(N);
-                velocY[IX(i, j, k, N)] -= 0.5f * (  p[IX(i, j+1, k, N)]
+                velocY[IX(i, j, k, N)] -= 0.5 * (  p[IX(i, j+1, k, N)]
                                                 -p[IX(i, j-1, k, N)]) * float(N);
-                velocZ[IX(i, j, k, N)] -= 0.5f * (  p[IX(i, j, k+1, N)]
+                velocZ[IX(i, j, k, N)] -= 0.5 * (  p[IX(i, j, k+1, N)]
                                                 -p[IX(i, j, k-1, N)]) * float(N);
             }
         }
@@ -1555,7 +1649,7 @@ void project(inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY,
     set_bnd(3, velocZ, N);
 }
 
-void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  inout float[MAX_ARR_SIZE] velocX, inout float[MAX_ARR_SIZE] velocY, inout float[MAX_ARR_SIZE] velocZ, float dt, int N)
+void advect(int b, inout float d[MAX_ARR_SIZE], inout float d0[MAX_ARR_SIZE],  inout float velocX[MAX_ARR_SIZE], inout float velocY[MAX_ARR_SIZE], inout float velocZ[MAX_ARR_SIZE], float dt, int N)
 {
     float i0, i1, j0, j1, k0, k1;
     
@@ -1580,25 +1674,25 @@ void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  i
                 y    = jfloat - tmp2;
                 z    = kfloat - tmp3;
                 
-                if(x < 0.5f) x = 0.5f; 
-                if(x > Nfloat + 0.5f) x = Nfloat + 0.5f; 
+                if(x < 0.5) x = 0.5; 
+                if(x > Nfloat + 0.5) x = Nfloat + 0.5; 
                 i0 = floor(x); 
-                i1 = i0 + 1.0f;
-                if(y < 0.5f) y = 0.5f; 
-                if(y > Nfloat + 0.5f) y = Nfloat + 0.5f; 
+                i1 = i0 + 1.0;
+                if(y < 0.5) y = 0.5; 
+                if(y > Nfloat + 0.5) y = Nfloat + 0.5; 
                 j0 = floor(y);
                 j1 = j0 + 1.0f; 
-                if(z < 0.5f) z = 0.5f;
-                if(z > Nfloat + 0.5f) z = Nfloat + 0.5f;
+                if(z < 0.5) z = 0.5;
+                if(z > Nfloat + 0.5) z = Nfloat + 0.5;
                 k0 = floor(z);
-                k1 = k0 + 1.0f;
+                k1 = k0 + 1.0;
                 
                 s1 = x - i0; 
-                s0 = 1.0f - s1; 
+                s0 = 1.0 - s1; 
                 t1 = y - j0; 
-                t0 = 1.0f - t1;
+                t0 = 1.0 - t1;
                 u1 = z - k0;
-                u0 = 1.0f - u1;
+                u0 = 1.0 - u1;
                 
                 int i0i = int(i0);
                 int i1i = int(i1);
@@ -1626,71 +1720,86 @@ void advect(int b, inout float[MAX_ARR_SIZE] d, inout float[MAX_ARR_SIZE] d0,  i
 
 
 struct FluidCube {
-    float size;
+    float scale;
+    vec3 center;
+    int size;
     float dt;
     float diff;
     float visc;
 
-    float[MAX_ARR_SIZE] pdensity;
-    float[MAX_ARR_SIZE] density;
+    float pdensity[MAX_ARR_SIZE];
+    float density[MAX_ARR_SIZE];
 
-    vec3[MAX_ARR_SIZE] V;
+    float Vx[MAX_ARR_SIZE];
+    float Vy[MAX_ARR_SIZE];
+    float Vz[MAX_ARR_SIZE];
 
-    vec3[MAX_ARR_SIZE] V0;
+    float Vx0[MAX_ARR_SIZE];
+    float Vy0[MAX_ARR_SIZE];
+    float Vz0[MAX_ARR_SIZE];
 };
 
-// FluidCube fc_create(int size, int diffusion, int viscosity, float dt) {
-//     float pdensity[MAX_ARR_SIZE];
-//     float density[MAX_ARR_SIZE];
-//     vec3 V[MAX_ARR_SIZE];
-//     vec3 V0[MAX_ARR_SIZE];
+FluidCube fc_create(float scale, vec3 center, int size, float diffusion, float viscosity, float dt) {
+    float pdensity[MAX_ARR_SIZE];
+    float density[MAX_ARR_SIZE];
+    float Vx[MAX_ARR_SIZE];
+    float Vy[MAX_ARR_SIZE];
+    float Vz[MAX_ARR_SIZE];
 
-//     FluidCube c = FluidCube(
-//         size,
-//         dt,
-//         diffusion,
-//         viscosity,
-//         pdensity,
-//         density,
-//         V,
-//         V0
-//     );
-//     return c;
-// }
+    float Vx0[MAX_ARR_SIZE];
+    float Vy0[MAX_ARR_SIZE];
+    float Vz0[MAX_ARR_SIZE];
 
-// void fc_add_density(inout FluidCube c, int x, int y, int z, float amt) {
-//     int N = c.size;
-//     int index = IX(x, y, z, N);
-//     c.density[index] += amt;
-// }
+    FluidCube c = FluidCube(
+        scale,
+        center,
+        size,
+        dt,
+        diffusion,
+        viscosity,
+        pdensity,
+        density,
+        Vx, 
+        Vy,
+        Vz,
+        Vx0,
+        Vy0,
+        Vz0
+    );
+    return c;
+}
 
-// void fc_add_velocity(inout FluidCube c, int x, int y, int z, float amtX, float amtY, float amtZ) {
+// void fc_add_density(inout FluidCube cube, int x, int y, int z, float amt) {
 //     int N = cube.size;
 //     int index = IX(x, y, z, N);
-//     vec3 amtV = vec3(amtX, amtY, amtZ);
-
-//     cube.V[index] += amtV;
+//     cube.density[index] += amt;
 // }
 
-// void fc_step(inout FluidCube c) {
+// void fc_add_velocity(inout FluidCube cube, int x, int y, int z, float amtX, float amtY, float amtZ) {
+//     int N = cube.size;
+//     int index = IX(x, y, z, N);
+
+//     cube.Vx[index] += amtX;
+//     cube.Vy[index] += amtY;
+//     cube.Vz[index] += amtZ;
+// }
+
+// void fc_step(inout FluidCube cube) {
 //     int N          = cube.size;
 //     float visc     = cube.visc;
 //     float diff     = cube.diff;
 //     float dt       = cube.dt;
 
-//     vec3[] V = cube.V;
-//     vec3[] V0 = cube.V0;
+//     float Vx[MAX_ARR_SIZE] = cube.Vx;
+//     float Vy[MAX_ARR_SIZE] = cube.Vy;
+//     float Vz[MAX_ARR_SIZE] = cube.Vz;
 
-//     float[MAX_ARR_SIZE] Vx = getx(V);
-//     float[MAX_ARR_SIZE] Vy = gety(V);
-//     float[MAX_ARR_SIZE] Vz = getz(V);
+//     float Vx0[MAX_ARR_SIZE] = cube.Vx0;
+//     float Vy0[MAX_ARR_SIZE] = cube.Vy0;
+//     float Vz0[MAX_ARR_SIZE] = cube.Vz0;
 
-//     float[MAX_ARR_SIZE] Vx0 = getx(V0);
-//     float[MAX_ARR_SIZE] Vy0 = gety(V0);
-//     float[MAX_ARR_SIZE] Vz0 = getz(V0);
-
-//     float[] s = cube.pdensity;;
-//     float[] density = cube.density;
+//     float s[MAX_ARR_SIZE] = cube.pdensity;;
+//     float density[MAX_ARR_SIZE] = cube.density;
     
 //     diffuse(1, Vx0, Vx, visc, dt, 4, N);
 //     diffuse(2, Vy0, Vy, visc, dt, 4, N);
@@ -1708,23 +1817,111 @@ struct FluidCube {
 //     advect(0, density, s, Vx, Vy, Vz, dt, N);
 // }
 
+// float fc_point_density(in FluidCube cube, in vec3 point) {
+//     int N = cube.size;
+//     // naive -> improve to binary search later
+//     vec3 bottomLeft = cube.center - vec3(float(N)*cube.scale / 2.);
+//     for (int i = 0; i < N; i ++) {
+//         for (int j = 0; j < N; j ++) {
+//             for (int k = 0; k < N; k ++) {
+//                 float xLB = bottomLeft.x + (cube.scale * float(i)) + cube.scale * 0.;
+//                 float xGB = bottomLeft.x + (cube.scale * float(i)) + cube.scale * 1.0;
+//                 float yLB = bottomLeft.y + (cube.scale * float(j)) + cube.scale * 0.;
+//                 float yGB = bottomLeft.y + (cube.scale * float(j)) + cube.scale * 1.0;
+//                 float zLB = bottomLeft.z + (cube.scale * float(k)) + cube.scale * 0.;
+//                 float zGB = bottomLeft.z + (cube.scale * float(k)) + cube.scale * 1.0;
+//                 if (point.x > xLB && point.x < xGB && point.y > yLB && point.y < yGB && point.z > zLB && point.z < zGB) {
+//                     return cube.density[IX(i, j, k, N)];
+//                 }
+//             }
+//         }
+//     }
+//     return 0.;
+// }
+
+float sdBox(vec3 p, vec3 half_bounds) {
+    float d = 0.;
+    if (abs(p.x) < half_bounds.x && abs(p.y) < half_bounds.y && abs(p.z) < half_bounds.z) {
+        return max(max(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y), abs(p.z) - half_bounds.z);
+    } else if (abs(p.x) < half_bounds.x) {
+        if (abs(p.y) < half_bounds.y) {
+            d = abs(p.z) - half_bounds.z;
+        } else {
+            if (abs(p.z) < half_bounds.z) {
+                d = abs(p.y) - half_bounds.y;
+            } else {
+                d = length(vec2(abs(p.y) - half_bounds.y, abs(p.z) - half_bounds.z));
+            }
+        }
+    } else if (abs(p.y) <= half_bounds.y) {
+        if (abs(p.z) <= half_bounds.z) {
+            d = abs(p.x) - half_bounds.x;
+        } else {
+            d = length(vec2(abs(p.x) - half_bounds.x, abs(p.z) - half_bounds.z));
+        }
+    } else {
+        if (abs(p.z) <= half_bounds.z) {
+            d = length(vec2(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y));
+        } else {
+            d = length(vec3(abs(p.x) - half_bounds.x, abs(p.y) - half_bounds.y, abs(p.z) - half_bounds.z));
+        }
+    }
+    return d;
+}
+
 struct Scene {
     Sphere sphere;
-    Fluid fluid;
+    FluidCube cube;
 };
 
 Scene sc_init() {
-    Sphere sphere = Sphere(vec3(0.;, 0., -1.), 0.5);
-    Fluid fluid = fc_create(256, 0.2, 0, 0.000001);
+    Sphere sphere = Sphere(vec3(0., 0., -1.), 0.5);
+    FluidCube cube = fc_create(1.0, vec3(0., 0., -0.5), 2, 0.2, 0., 0.0001);
+    // fc_add_density(cube, 0, 0, 0, 0.2);
+    // fc_add_velocity(cube, 0, 0, 0, 10., 10., 10.);
     return Scene(
         sphere,
-        fluid
+        cube
     );
 }
 
+// bool rayFluidInteract(in FluidCube cube, in Ray r, float t_min, float t_max, inout HitRecord rec) {
+//     // Strategy -> treat the cube like an actual cube
+//     // find closest hit point and normal
+//     // reflect based on the density of the cube at the hit point coord
+//     // requires being able to look up the density at a point
+//     int iters = 1;
+//     int max_iter = 10;
+//     vec3 loc = r.origin;
+//     bool hit = false;
+//     float step_size = 1.;
+//     while (!hit && iters < max_iter) {
+//         float half_length = cube.scale * float(cube.size) / 2.;
+//         vec3 half_bounds = vec3(
+//             cube.center.x + half_length,
+//             cube.center.y + half_length,
+//             cube.center.z + half_length
+//         );
+//         step_size = sdBox(loc, half_bounds);
+//         loc = loc + r.direction * step_size;
+//         if (step_size < EPSILON) {
+//             hit = true;
+//             // float density = fc_point_density(cube, loc);
+//             rec.t = length((loc  - r.origin))/length(r.direction);
+//             rec.p = loc;
+//             // rec.dm =  min(1., density / 255.);
+//             vec3 outward_normal = normalize((rec.p - cube.center));
+//             hr_set_face_normal(rec, r, outward_normal);
+//             return true;
+//         }
+//         iters += 1;
+//     }
+//     return false;
+// }
+
 vec3 sc_ray_color(in Scene s, in Ray r) {
     HitRecord rec;
-    if (sphere_hit(s.sphere, r, 0., 1./0., rec)) {
+    if (sphere_hit(s.sphere, r, 0., 1./0., rec) ) {
         return 0.5 * (rec.normal + vec3(1., 1., 1.));
     }
     vec3 unit_dir = normalize(r.direction);
@@ -1753,6 +1950,7 @@ vec3 sc_col(in Scene s) {
     float u = uv.x;
     float v = uv.y;
     Ray ray = Ray(origin, lower_left_corner + u*horizontal + v*vertical - origin);
+    // fc_step(s.cube);
     return sc_ray_color(s, ray);
 }
 
@@ -1924,7 +2122,7 @@ void main() {
     buffers.push({
         Name: '/Users/siddharthhathi/Library/CloudStorage/OneDrive-Personal/Everything/Documents/School/dart/23S/cs77/77FinalProject/main.glsl',
         File: '/Users/siddharthhathi/Library/CloudStorage/OneDrive-Personal/Everything/Documents/School/dart/23S/cs77/77FinalProject/main.glsl',
-        LineOffset: 538,
+        LineOffset: 623,
         Target: null,
         ChannelResolution: Array(10).fill(new THREE.Vector3(0,0,0)),
         PingPongTarget: null,

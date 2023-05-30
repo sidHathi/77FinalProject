@@ -5,6 +5,7 @@ struct HitRecord {
     vec3 normal;
     float t;
     bool front_face;
+    float dm;
     Material mat;
 };
 

@@ -2,7 +2,7 @@
 #define PI 3.1415926535897932384626433832795
 
 // This is a constraint of GLSL and means N can be no larger than 64
-const int MAX_ARR_SIZE = 262144;
+const int MAX_ARR_SIZE = 64;
 
 int IX(int x, int y, int z, int N) {
     return x + y*N + z*N*N;
